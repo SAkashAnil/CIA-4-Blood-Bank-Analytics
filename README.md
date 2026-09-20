@@ -1,4 +1,4 @@
-# CIA-4: Real-Time Blood Bank Inventory & Expiry Intelligence
+Real-Time Blood Bank Inventory & Expiry Intelligence
 
 ## Project Overview
 
