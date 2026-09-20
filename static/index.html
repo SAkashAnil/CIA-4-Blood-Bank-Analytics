@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Blood bank network: inventory and expiry intelligence</title>
+  <link rel="stylesheet" href="/static/css/dashboard.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="brand">
+    <svg class="drop" viewBox="0 0 24 32" aria-hidden="true"><path d="M12 1C12 1 2 13.5 2 20.5a10 10 0 0 0 20 0C22 13.5 12 1 12 1z"/></svg>
+    <div>
+      <h1>Blood bank network: inventory and expiry intelligence</h1>
+      <p>Business Decision Intelligence, CIA-4. Source: Neon PostgreSQL. All data is synthetic.</p>
+    </div>
+  </div>
+  <div class="status">
+    <span id="status-pill" class="status-pill" data-state="connecting"><i class="dot"></i><span id="status-text">Connecting to database</span></span>
+    <span id="data-asof" class="asof"></span>
+    <label class="auto"><input type="checkbox" id="auto-refresh" checked> Auto-refresh <i id="live-dot" class="live-dot" title="Live updates on"></i></label>
+    <button id="btn-refresh" class="btn" type="button">Refresh data</button>
+  </div>
+</header>
+
+<div class="controls">
+  <nav class="tabs" role="tablist" aria-label="Dashboard sections">
+    <button class="tab" role="tab" data-tab="overview"  id="tab-overview">Executive overview</button>
+    <button class="tab" role="tab" data-tab="inventory" id="tab-inventory">Expiry and inventory intelligence</button>
+    <button class="tab" role="tab" data-tab="emergency" id="tab-emergency">Emergency and demand monitoring</button>
+  </nav>
+  <div class="filters">
+    <label>Branch<select id="f-branch"><option value="">All branches</option></select></label>
+    <label>Blood group<select id="f-bg"><option value="">All blood groups</option></select></label>
+    <label>Component<select id="f-comp"><option value="">All components</option></select></label>
+    <label>Period<select id="f-days">
+      <option value="7">Last 7 days</option>
+      <option value="30" selected>Last 30 days</option>
+      <option value="90">Last 90 days</option>
+      <option value="180">Last 180 days</option>
+    </select></label>
+    <button id="btn-reset" class="btn ghost" type="button">Clear filters</button>
+    <p class="filter-note">Stock figures are current. Wastage, demand and trend figures cover the selected period.</p>
+  </div>
+</div>
+
+<div id="error-banner" class="banner" role="alert" hidden></div>
+
+<main>
+
+  <!-- ============ 1. EXECUTIVE OVERVIEW ============ -->
+  <section id="page-overview" class="page" role="tabpanel" aria-labelledby="tab-overview" hidden>
+    <p id="insight-overview" class="insight">Loading summary</p>
+
+    <div class="panel flush">
+      <div class="panel-head pad"><h2 id="kpi-title">Network performance</h2><span class="note">Hover a figure to see how it is calculated</span></div>
+      <div id="kpi-band" class="kpi-band"></div>
+    </div>
+
+    <div class="grid cols-2">
+      <div class="panel">
+        <div class="panel-head"><h2>Stock by blood group</h2><span class="note">Units in stock, by component</span></div>
+        <div class="chart-box"><canvas id="c-bg" role="img" aria-label="Stacked bar chart of units in stock by blood group and component"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Branch-wise stock</h2><span class="note">Units in stock, split by expiry risk</span></div>
+        <div class="chart-box"><canvas id="c-branch" role="img" aria-label="Bar chart of units in stock by branch, split into healthy and at-risk units"></canvas></div>
+      </div>
+    </div>
+
+    <div class="grid cols-2">
+      <div class="panel">
+        <div class="panel-head"><h2>Daily blood flow</h2><span class="note">Units collected, issued and expired per day</span></div>
+        <div class="chart-box"><canvas id="c-trend" role="img" aria-label="Line chart of units collected, issued and expired per day"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Branch scorecard</h2><span class="note">Click a heading to sort</span></div>
+        <div class="scroll"><table id="t-branches" class="tbl"></table></div>
+      </div>
+    </div>
+
+    <details class="defs">
+      <summary>How each indicator is defined</summary>
+      <dl>
+        <dt>Units in stock</dt><dd>Units that have been collected and not yet issued, expired or discarded.</dd>
+        <dt>Units at expiry risk</dt><dd>In-stock units that expire within their risk window: red cells 7 days, platelets 48 hours, plasma 30 days.</dd>
+        <dt>Wastage rate</dt><dd>Expired units divided by units collected in the selected period.</dd>
+        <dt>Fulfilment rate</dt><dd>Requests met in full divided by all requests in the selected period.</dd>
+        <dt>Emergency response time</dt><dd>Average minutes from request to fulfilment for emergency-urgency requests.</dd>
+        <dt>Unmet requests</dt><dd>Requests that were only partly met or not met at all, a proxy for stockout incidents.</dd>
+        <dt>Repeat donor rate</dt><dd>Donors, after removing duplicate records, who donated more than once, divided by all donors.</dd>
+        <dt>Targets</dt><dd>Wastage, fulfilment and response targets shown on the cards are illustrative management assumptions.</dd>
+      </dl>
+    </details>
+  </section>
+
+  <!-- ============ 2. EXPIRY & INVENTORY INTELLIGENCE ============ -->
+  <section id="page-inventory" class="page" role="tabpanel" aria-labelledby="tab-inventory" hidden>
+    <p id="insight-inventory" class="insight">Loading summary</p>
+
+    <div class="grid cols-2 wide-right">
+      <div class="panel">
+        <div class="panel-head"><h2>Time left on units in stock</h2><span id="bucket-note" class="note">Units by time to expiry</span></div>
+        <div class="chart-box"><canvas id="c-buckets" role="img" aria-label="Stacked bar chart of units in stock by time remaining to expiry"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2 id="heat-title">Stock cover by branch and blood group</h2><span id="heat-note" class="note"></span></div>
+        <div class="scroll"><table id="t-heat" class="heat"></table></div>
+        <ul class="legend">
+          <li><i class="sw heat-out"></i>Out of stock</li>
+          <li><i class="sw heat-low"></i>Below target cover</li>
+          <li><i class="sw heat-ok"></i>Within target</li>
+          <li><i class="sw heat-surplus"></i>More than 3 times target</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Transfer recommendations</h2>
+        <span id="transfer-summary" class="note"></span>
+        <label class="check"><input type="checkbox" id="show-alt"> Show alternative options</label>
+      </div>
+      <div class="scroll"><table id="t-transfers" class="tbl"></table></div>
+    </div>
+
+    <div class="grid cols-2">
+      <div class="panel">
+        <div class="panel-head"><h2>Units at expiry risk</h2><span id="risk-summary" class="note"></span></div>
+        <div class="scroll tall"><table id="t-risk" class="tbl"></table></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Branch and blood group inventory</h2><span class="note">Click a heading to sort</span></div>
+        <div class="scroll tall"><table id="t-inventory" class="tbl"></table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 3. EMERGENCY & DEMAND MONITORING ============ -->
+  <section id="page-emergency" class="page" role="tabpanel" aria-labelledby="tab-emergency" hidden>
+    <p id="insight-emergency" class="insight">Loading summary</p>
+
+    <div class="panel flush">
+      <div class="panel-head pad"><h2 id="req-title">Hospital requests</h2></div>
+      <div id="req-kpis" class="kpi-band mini"></div>
+    </div>
+
+    <div class="grid cols-3">
+      <div class="panel">
+        <div class="panel-head"><h2>Response time by urgency</h2><span class="note">Average minutes to fulfil</span></div>
+        <div class="chart-box short"><canvas id="c-resp" role="img" aria-label="Bar chart of average response time in minutes by urgency"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Requests by blood group</h2><span class="note">Met and unmet</span></div>
+        <div class="chart-box short"><canvas id="c-reqbg" role="img" aria-label="Stacked bar chart of requests by blood group showing met, partly met and unmet"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Daily demand</h2><span class="note">Requests per day</span></div>
+        <div class="chart-box short"><canvas id="c-reqdaily" role="img" aria-label="Chart of requests, emergency requests and unmet requests per day"></canvas></div>
+      </div>
+    </div>
+
+    <div class="grid cols-2 wider-left">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Latest hospital requests</h2>
+          <span class="inline-filters">
+            <label>Urgency<select id="f-urgency"><option value="">All</option><option value="EMERGENCY">Emergency</option><option value="URGENT">Urgent</option><option value="ROUTINE">Routine</option></select></label>
+            <label>Outcome<select id="f-status"><option value="">All</option><option value="UNFULFILLED">Unmet</option><option value="PARTIAL">Partly met</option><option value="FULFILLED">Met in full</option></select></label>
+          </span>
+        </div>
+        <div class="scroll tall"><table id="t-requests" class="tbl"></table></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Live activity feed</h2><span id="feed-note" class="note"></span></div>
+        <ul id="feed-list" class="feed"></ul>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <span id="foot-source">Connecting</span>
+  <span>Times are shown in your local time zone.</span>
+</footer>
+
+<script src="/static/vendor/chart.umd.js"></script>
+<script src="/static/js/dashboard.js"></script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+branch_id,branch_name,city,branch_type
+BR01,Bengaluru Central,Bengaluru,HUB
+BR02,Kochi Camp Centre,Kochi,SPOKE
+BR03,Chennai Main,Chennai,SPOKE
+BR04,Hyderabad East,Hyderabad,SPOKE
+BR05,Mumbai West,Mumbai,SPOKE
+BR06,Delhi North,Delhi,SPOKE
